@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#f59e0b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="金价监控">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <title>💰 上金所黄金实时监控</title>
+  <style>
+    /* ==================== 基础样式 ==================== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --gold: #f59e0b;
+      --gold-light: #fbbf24;
+      --gold-dark: #d97706;
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #111111;
+      --bg-card: #1a1a1a;
+      --bg-card-hover: #222222;
+      --text-primary: #ffffff;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --green: #22c55e;
+      --red: #ef4444;
+      --border: #2a2a2a;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ==================== 布局 ==================== */
+    .app {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 0 16px;
+      padding-bottom: 100px;
+    }
+
+    /* ==================== 顶部导航 ==================== */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      background: var(--bg-primary);
+      z-index: 100;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .header-title .gold-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.offline { background: var(--red); animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s;
+    }
+
+    .icon-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+    .icon-btn.active { background: var(--gold); color: #000; border-color: var(--gold); }
+
+    /* ==================== 价格主卡片 ==================== */
+    .price-card {
+      background: linear-gradient(145deg, #1a1a1a, #111);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 24px;
+      margin-top: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .price-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .price-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .price-main {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .price-currency {
+      font-size: 24px;
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    .price-value {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      font-variant-numeric: tabular-nums;
+      background: linear-gradient(135deg, #fff, #ccc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      transition: all 0.3s ease;
+    }
+
+    .price-unit {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+
+    .price-change {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .change-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .change-badge.up { background: rgba(34,197,94,0.15); color: var(--green); }
+    .change-badge.down { background: rgba(239,68,68,0.15); color: var(--red); }
+    .change-badge.neutral { background: rgba(161,161,170,0.15); color: var(--text-secondary); }
+
+    .update-time {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* 价格闪烁动画 */
+    .price-flash-up { animation: flashUp 0.5s ease; }
+    .price-flash-down { animation: flashDown 0.5s ease; }
+
+    @keyframes flashUp {
+      0% { color: var(--green); transform: scale(1.02); }
+      100% { color: inherit; transform: scale(1); }
+    }
+
+    @keyframes flashDown {
+      0% { color: var(--red); transform: scale(1.02); }
+      100% { color: inherit; transform: scale(1); }
+    }
+
+    /* ==================== 统计指标 ==================== */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 12px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 16px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-value.up { color: var(--green); }
+    .stat-value.down { color: var(--red); }
+
+    /* ==================== 走势图 ==================== */
+    .chart-section {
+      margin-top: 20px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .chart-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    .chart-tab {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      transition: all 0.2s;
+    }
+
+    .chart-tab.active {
+      background: var(--gold);
+      color: #000;
+      font-weight: 600;
+    }
+
+    .chart-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      height: 220px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    canvas#priceChart {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ==================== 通知设置 ==================== */
+    .notification-section {
+      margin-top: 20px;
+    }
+
+    .notification-banner {
+      background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05));
+      border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .notification-banner h3 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .notification-banner p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+      color: #000;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(245,158,11,0.3); }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-secondary:hover { background: var(--bg-card-hover); }
+
+    /* ==================== 告警设置面板 ==================== */
+    .settings-panel {
+      margin-top: 16px;
+    }
+
+    .setting-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 10px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .setting-info {
+      flex: 1;
+    }
+
+    .setting-label {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .setting-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Toggle 开关 */
+    .toggle {
+      width: 48px;
+      height: 28px;
+      border-radius: 14px;
+      background: var(--border);
+      cursor: pointer;
+      position: relative;
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+
+    .toggle.on { background: var(--gold); }
+
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: white;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.3s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    .toggle.on::after { transform: translateX(20px); }
+
+    /* 输入框 */
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .input-field {
+      flex: 1;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-field:focus { border-color: var(--gold); }
+    .input-field::placeholder { color: var(--text-muted); }
+
+    .input-prefix {
+      font-size: 14px;
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    /* ==================== 历史记录 ==================== */
+    .history-section {
+      margin-top: 20px;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      background: var(--bg-card);
+      border-radius: 10px;
+      transition: background 0.2s;
+    }
+
+    .history-item:hover { background: var(--bg-card-hover); }
+
+    .history-time {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 65px;
+    }
+
+    .history-price {
+      font-size: 15px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .history-change {
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      min-width: 75px;
+      text-align: right;
+    }
+
+    .history-change.up { color: var(--green); }
+    .history-change.down { color: var(--red); }
+
+    /* ==================== 底部安装提示 ==================== */
+    .install-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 200;
+    }
+
+    .install-bar.show { display: flex; }
+
+    .install-info {
+      font-size: 13px;
+    }
+
+    .install-info strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .install-info span {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .install-btn {
+      background: var(--gold);
+      color: #000;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .close-install {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 8px;
+    }
+
+    /* ==================== 通知状态已开启样式 ==================== */
+    .notification-status {
+      background: var(--bg-card);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 16px;
+      padding: 20px;
+    }
+
+    .notification-status .status-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .notification-status .status-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(34,197,94,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .notification-status h3 {
+      font-size: 15px;
+      color: var(--green);
+    }
+
+    .notification-status p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-row .btn-secondary {
+      flex: 1;
+      justify-content: center;
+    }
+
+    /* ==================== 加载骨架屏 ==================== */
+    .skeleton {
+      background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover) 50%, var(--bg-card) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 8px;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ==================== Toast 提示 ==================== */
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 14px;
+      z-index: 1000;
+      transition: transform 0.3s ease;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ==================== 响应式 ==================== */
+    @media (min-width: 768px) {
+      .app { max-width: 520px; }
+      .price-value { font-size: 56px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- 顶部导航 -->
+    <header class="header">
+      <div class="header-title">
+        <div class="gold-icon">🥇</div>
+        <span>金价监控</span>
+        <div class="status-dot" id="statusDot"></div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="btnRefresh" title="刷新">🔄</button>
+        <button class="icon-btn" id="btnSettings" title="设置">⚙️</button>
+      </div>
+    </header>
+
+    <!-- 价格主卡片 -->
+    <div class="price-card">
+      <div class="price-label">
+        <span>🏛️ 上海黄金交易所 · Au99.99</span>
+        <span>🔴 LIVE</span>
+      </div>
+      <div class="price-main">
+        <span class="price-currency">¥</span>
+        <span class="price-value" id="priceValue">---</span>
+        <span class="price-unit">元/克</span>
+      </div>
+      <div class="price-change">
+        <span class="change-badge neutral" id="changeBadge">
+          <span id="changeIcon">—</span>
+          <span id="changeValue">¥0.00</span>
+          <span id="changePercent">(0.00%)</span>
+        </span>
+        <span class="update-time" id="updateTime">等待数据...</span>
+      </div>
+      <div class="data-source" id="dataSource" style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+        📡 数据源: 初始化中...
+      </div>
+    </div>
+
+    <!-- 上金所行情数据 -->
+    <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr); margin-top:10px;">
+      <div class="stat-card" style="border-left: 3px solid var(--gold);">
+        <div class="stat-label">Au99.99 开盘</div>
+        <div class="stat-value" id="au9999Open" style="color:var(--gold);">--</div>
+      </div>
+      <div class="stat-card" style="border-left: 3px solid var(--gold-dark);">
+        <div class="stat-label">Au(T+D) 最新</div>
+        <div class="stat-value" id="auTDLatest" style="color:var(--gold-dark);">--</div>
+      </div>
+    </div>
+    <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr); margin-top:6px;">
+      <div class="stat-card" style="border-left: 3px solid var(--text-muted);">
+        <div class="stat-label">上海金(早盘)</div>
+        <div class="stat-value" id="benchmarkAM" style="color:var(--text-secondary);">--</div>
+      </div>
+      <div class="stat-card" style="border-left: 3px solid var(--text-muted);">
+        <div class="stat-label">上海金(午盘)</div>
+        <div class="stat-value" id="benchmarkPM" style="color:var(--text-secondary);">--</div>
+      </div>
+    </div>
+
+    <!-- 统计指标 -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">今日最高</div>
+        <div class="stat-value" id="highPrice">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">今日最低</div>
+        <div class="stat-value" id="lowPrice">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">波动幅度</div>
+        <div class="stat-value" id="volatility">--</div>
+      </div>
+    </div>
+
+    <!-- 走势图 -->
+    <div class="chart-section">
+      <div class="section-header">
+        <h2 class="section-title">📈 价格走势</h2>
+        <div class="chart-tabs">
+          <button class="chart-tab active" data-range="30">30条</button>
+          <button class="chart-tab" data-range="60">60条</button>
+          <button class="chart-tab" data-range="100">全部</button>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+
+    <!-- 通知设置 -->
+    <div class="notification-section" id="notificationSection">
+      <!-- 未开启通知 -->
+      <div id="notifyBanner" class="notification-banner">
+        <h3>📱 开启通知推送</h3>
+        <p>在手机通知栏实时接收金价变动提醒<br>支持价格上下限告警和波动提醒</p>
+        <button class="btn-primary" id="btnEnableNotify">
+          <span>🔔</span> 开启通知
+        </button>
+      </div>
+
+      <!-- 已开启通知 -->
+      <div id="notifyStatus" class="notification-status" style="display:none;">
+        <div class="status-header">
+          <div class="status-icon">🔔</div>
+          <div>
+            <h3>通知已开启</h3>
+            <p>金价变动将实时推送到通知栏</p>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" id="btnTestNotify">🧪 测试通知</button>
+          <button class="btn-secondary" id="btnDisableNotify">🔕 关闭通知</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 告警设置 -->
+    <div class="settings-panel" id="settingsPanel" style="display:none;">
+      <div class="section-header">
+        <h2 class="section-title">⚙️ 告警设置</h2>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">实时推送</div>
+            <div class="setting-desc">每次价格更新都推送通知</div>
+          </div>
+          <div class="toggle" id="toggleAlways" onclick="toggleSetting('alwaysNotify')"></div>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">🔺 价格上限告警</div>
+            <div class="setting-desc">金价超过此值时告警</div>
+          </div>
+        </div>
+        <div class="input-row">
+          <span class="input-prefix">¥</span>
+          <input type="number" class="input-field" id="inputUpperLimit"
+            placeholder="例如 950" step="0.1">
+          <span class="price-unit">元/克</span>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">🔻 价格下限告警</div>
+            <div class="setting-desc">金价低于此值时告警</div>
+          </div>
+        </div>
+        <div class="input-row">
+          <span class="input-prefix">¥</span>
+          <input type="number" class="input-field" id="inputLowerLimit"
+            placeholder="例如 900" step="0.1">
+          <span class="price-unit">元/克</span>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">📊 波动幅度告警</div>
+            <div class="setting-desc">单次波动超过此百分比时告警</div>
+          </div>
+        </div>
+        <div class="input-row">
+          <input type="number" class="input-field" id="inputChangeThreshold"
+            placeholder="例如 0.5" step="0.1" min="0.1">
+          <span class="input-prefix">%</span>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btnSaveSettings" style="margin-top:12px;">
+        💾 保存设置
+      </button>
+    </div>
+
+    <!-- 历史记录 -->
+    <div class="history-section">
+      <div class="section-header">
+        <h2 class="section-title">📋 实时记录</h2>
+        <span style="font-size:12px;color:var(--text-muted);" id="historyCount">0 条</span>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-item">
+          <span class="history-time">等待中...</span>
+          <span class="history-price" style="color:var(--text-muted);">--</span>
+          <span class="history-change">--</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 安装提示栏 -->
+  <div class="install-bar" id="installBar">
+    <div class="install-info">
+      <strong>📲 安装到手机</strong>
+      <span>添加到主屏幕以获得最佳体验</span>
+    </div>
+    <button class="install-btn" id="btnInstall">安装</button>
+    <button class="close-install" id="btnCloseInstall">×</button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ==================== 应用状态 ====================
+    const state = {
+      price: null,
+      previousPrice: null,
+      history: [],
+      highPrice: 0,
+      lowPrice: Infinity,
+      subscriptionId: null,
+      isSubscribed: false,
+      eventSource: null,
+      chartRange: 30,
+      settings: {
+        alwaysNotify: false,
+        upperLimit: null,
+        lowerLimit: null,
+        changeThreshold: null
+      }
+    };
+
+    // ==================== DOM 元素 ====================
+    const $ = (sel) => document.querySelector(sel);
+    const priceEl = $('#priceValue');
+    const changeBadge = $('#changeBadge');
+    const changeIcon = $('#changeIcon');
+    const changeValue = $('#changeValue');
+    const changePercent = $('#changePercent');
+    const updateTime = $('#updateTime');
+    const highPriceEl = $('#highPrice');
+    const lowPriceEl = $('#lowPrice');
+    const volatilityEl = $('#volatility');
+    const historyList = $('#historyList');
+    const historyCount = $('#historyCount');
+    const statusDot = $('#statusDot');
+
+    // ==================== 图表绘制 ====================
+    class MiniChart {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+      }
+
+      resize() {
+        const rect = this.canvas.parentElement.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
+        this.ctx.scale(dpr, dpr);
+        this.width = rect.width;
+        this.height = rect.height;
+      }
+
+      draw(data) {
+        if (!data || data.length < 2) return;
+
+        const ctx = this.ctx;
+        const w = this.width;
+        const h = this.height;
+        const padding = { top: 20, right: 15, bottom: 30, left: 55 };
+
+        ctx.clearRect(0, 0, w, h);
+
+        const prices = data.map(d => d.price);
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        const range = max - min || 1;
+
+        const chartW = w - padding.left - padding.right;
+        const chartH = h - padding.top - padding.bottom;
+
+        const xStep = chartW / (data.length - 1);
+        const getX = (i) => padding.left + i * xStep;
+        const getY = (p) => padding.top + chartH - ((p - min) / range * chartH);
+
+        // 网格线
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = padding.top + (chartH / 4) * i;
+          ctx.beginPath();
+          ctx.moveTo(padding.left, y);
+          ctx.lineTo(w - padding.right, y);
+          ctx.stroke();
+
+          // Y轴标签
+          const priceLabel = (max - (range / 4) * i).toFixed(1);
+          ctx.fillStyle = 'rgba(255,255,255,0.3)';
+          ctx.font = '10px system-ui';
+          ctx.textAlign = 'right';
+          ctx.fillText(priceLabel, padding.left - 8, y + 3);
+        }
+
+        // 渐变填充
+        const gradient = ctx.createLinearGradient(0, padding.top, 0, h - padding.bottom);
+        const isUp = prices[prices.length - 1] >= prices[0];
+        const color = isUp ? '#22c55e' : '#ef4444';
+
+        gradient.addColorStop(0, isUp ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+        ctx.beginPath();
+        ctx.moveTo(getX(0), getY(prices[0]));
+        for (let i = 1; i < prices.length; i++) {
+          ctx.lineTo(getX(i), getY(prices[i]));
+        }
+        ctx.lineTo(getX(prices.length - 1), h - padding.bottom);
+        ctx.lineTo(getX(0), h - padding.bottom);
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // 价格线
+        ctx.beginPath();
+        ctx.moveTo(getX(0), getY(prices[0]));
+        for (let i = 1; i < prices.length; i++) {
+          ctx.lineTo(getX(i), getY(prices[i]));
+        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // 最新价格点
+        const lastX = getX(prices.length - 1);
+        const lastY = getY(prices[prices.length - 1]);
+
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 脉冲效果
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 8, 0, Math.PI * 2);
+        ctx.fillStyle = isUp ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
+        ctx.fill();
+
+        // X轴时间标签
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '10px system-ui';
+        ctx.textAlign = 'center';
+        const labelCount = Math.min(5, data.length);
+        const labelStep = Math.floor(data.length / labelCount);
+        for (let i = 0; i < data.length; i += labelStep) {
+          const time = data[i].time || '';
+          ctx.fillText(time.slice(0, 5), getX(i), h - 8);
+        }
+        // 最后一个
+        if (data.length > 1) {
+          const lastTime = data[data.length - 1].time || '';
+          ctx.fillText(lastTime.slice(0, 5), lastX, h - 8);
+        }
+      }
+    }
+
+    const chart = new MiniChart(document.getElementById('priceChart'));
+
+    // ==================== 价格更新 ====================
+    function updateUI(data) {
+      const { price, previousPrice: prev, change, changePercent: pct, timestamp, source, sgeMarket, benchmark } = data;
+
+      if (!price) return;
+
+      // 更新价格
+      const oldPrice = state.price;
+      state.price = price;
+      state.previousPrice = prev;
+
+      priceEl.textContent = price.toFixed(2);
+
+      // 价格闪烁效果
+      if (oldPrice && price !== oldPrice) {
+        priceEl.classList.remove('price-flash-up', 'price-flash-down');
+        void priceEl.offsetWidth; // 触发回流
+        priceEl.classList.add(price > oldPrice ? 'price-flash-up' : 'price-flash-down');
+      }
+
+      // 涨跌标记
+      const isUp = change > 0;
+      const isDown = change < 0;
+      changeBadge.className = `change-badge ${isUp ? 'up' : isDown ? 'down' : 'neutral'}`;
+      changeIcon.textContent = isUp ? '▲' : isDown ? '▼' : '—';
+      changeValue.textContent = `¥${Math.abs(change).toFixed(2)}`;
+      changePercent.textContent = `(${Math.abs(pct).toFixed(4)}%)`;
+
+      // 更新时间
+      const now = new Date(timestamp || Date.now());
+      updateTime.textContent = `更新于 ${now.toLocaleTimeString('zh-CN', { hour12: false })}`;
+
+      // 数据源
+      if (source) {
+        document.getElementById('dataSource').textContent = `📡 数据源: ${source} (sge.com.cn)`;
+      }
+
+      // 上金所行情数据
+      if (sgeMarket) {
+        const au9999 = sgeMarket['Au99.99'];
+        const auTD = sgeMarket['Au(T+D)'];
+
+        if (au9999 && au9999.open) {
+          document.getElementById('au9999Open').textContent = `¥${au9999.open.toFixed(2)}`;
+        }
+        if (auTD && auTD.latest) {
+          document.getElementById('auTDLatest').textContent = `¥${auTD.latest.toFixed(2)}`;
+        }
+      }
+
+      // 上海金基准价
+      if (benchmark) {
+        if (benchmark.am) {
+          document.getElementById('benchmarkAM').textContent = `¥${benchmark.am.toFixed(2)}`;
+        }
+        if (benchmark.pm) {
+          document.getElementById('benchmarkPM').textContent = `¥${benchmark.pm.toFixed(2)}`;
+        }
+      }
+
+      // 更新高低价 - 优先使用上金所的真实最高最低价
+      if (sgeMarket && sgeMarket['Au99.99']) {
+        const au = sgeMarket['Au99.99'];
+        if (au.high && au.high > 0) state.highPrice = au.high;
+        if (au.low && au.low > 0) state.lowPrice = au.low;
+      } else {
+        if (price > state.highPrice) state.highPrice = price;
+        if (price < state.lowPrice) state.lowPrice = price;
+      }
+
+      highPriceEl.textContent = `¥${state.highPrice.toFixed(2)}`;
+      highPriceEl.className = 'stat-value up';
+      lowPriceEl.textContent = `¥${state.lowPrice.toFixed(2)}`;
+      lowPriceEl.className = 'stat-value down';
+
+      const vol = state.highPrice - state.lowPrice;
+      volatilityEl.textContent = `¥${vol.toFixed(2)}`;
+      volatilityEl.className = `stat-value ${vol > 1 ? 'up' : ''}`;
+    }
+
+    function addHistoryRecord(record) {
+      state.history.push(record);
+
+      // 更新图表
+      const chartData = state.history.slice(-state.chartRange);
+      chart.draw(chartData);
+
+      // 更新历史列表（显示最近20条，倒序）
+      const recent = state.history.slice(-20).reverse();
+      historyList.innerHTML = recent.map(r => {
+        const changeClass = r.change > 0 ? 'up' : r.change < 0 ? 'down' : '';
+        const changeSign = r.change >= 0 ? '+' : '';
+        return `
+          <div class="history-item">
+            <span class="history-time">${r.time || '--'}</span>
+            <span class="history-price">¥${r.price.toFixed(2)}</span>
+            <span class="history-change ${changeClass}">
+              ${changeSign}${r.change.toFixed(2)} (${r.changePercent.toFixed(3)}%)
+            </span>
+          </div>
+        `;
+      }).join('');
+
+      historyCount.textContent = `${state.history.length} 条`;
+    }
+
+    // ==================== SSE 实时连接 ====================
+    function connectSSE() {
+      if (state.eventSource) {
+        state.eventSource.close();
+      }
+
+      state.eventSource = new EventSource('/api/stream');
+      statusDot.classList.remove('offline');
+
+      state.eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          updateUI(data);
+          addHistoryRecord({
+            price: data.price,
+            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            change: data.change || 0,
+            changePercent: data.changePercent || 0,
+            timestamp: data.timestamp
+          });
+        } catch (e) {
+          console.error('SSE 数据解析失败:', e);
+        }
+      };
+
+      state.eventSource.onerror = () => {
+        statusDot.classList.add('offline');
+        // 5秒后重连
+        setTimeout(connectSSE, 5000);
+      };
+    }
+
+    // ==================== 推送通知 ====================
+    async function registerServiceWorker() {
+      if (!('serviceWorker' in navigator)) {
+        console.log('浏览器不支持 Service Worker');
+        return null;
+      }
+
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        console.log('✅ Service Worker 注册成功');
+        return reg;
+      } catch (e) {
+        console.error('Service Worker 注册失败:', e);
+        return null;
+      }
+    }
+
+    async function subscribePush() {
+      const reg = await navigator.serviceWorker.ready;
+
+      // 获取 VAPID 公钥
+      const response = await fetch('/api/vapid-public-key');
+      const { publicKey } = await response.json();
+
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+      });
+
+      // 发送订阅到服务器
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscription,
+          settings: state.settings
+        })
+      });
+
+      const data = await res.json();
+      state.subscriptionId = data.id;
+      state.isSubscribed = true;
+
+      // 保存到 localStorage
+      localStorage.setItem('gold-sub-id', data.id);
+      localStorage.setItem('gold-subscription', JSON.stringify(subscription));
+
+      return data.id;
+    }
+
+    async function enableNotifications() {
+      try {
+        const permission = await Notification.requestPermission();
+
+        if (permission === 'granted') {
+          await subscribePush();
+          showNotifyStatus(true);
+          showToast('🔔 通知已开启！');
+        } else {
+          showToast('❌ 请在浏览器设置中允许通知权限');
+        }
+      } catch (e) {
+        console.error('开启通知失败:', e);
+        showToast('⚠️ 开启通知失败: ' + e.message);
+      }
+    }
+
+    function showNotifyStatus(enabled) {
+      $('#notifyBanner').style.display = enabled ? 'none' : 'block';
+      $('#notifyStatus').style.display = enabled ? 'block' : 'none';
+    }
+
+    // ==================== 告警设置 ====================
+    async function saveSettings() {
+      const settings = {
+        alwaysNotify: state.settings.alwaysNotify,
+        upperLimit: parseFloat($('#inputUpperLimit').value) || null,
+        lowerLimit: parseFloat($('#inputLowerLimit').value) || null,
+        changeThreshold: parseFloat($('#inputChangeThreshold').value) || null
+      };
+
+      state.settings = settings;
+      localStorage.setItem('gold-settings', JSON.stringify(settings));
+
+      if (state.subscriptionId) {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscriptionId: state.subscriptionId,
+            settings
+          })
+        });
+      }
+
+      showToast('✅ 设置已保存');
+    }
+
+    function toggleSetting(key) {
+      state.settings[key] = !state.settings[key];
+      const el = document.getElementById('toggleAlways');
+      el.classList.toggle('on', state.settings[key]);
+    }
+
+    // ==================== 工具函数 ====================
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    function showToast(message) {
+      const toast = $('#toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // ==================== PWA 安装 ====================
+    let deferredPrompt;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      $('#installBar').classList.add('show');
+    });
+
+    // ==================== 事件绑定 ====================
+    document.addEventListener('DOMContentLoaded', () => {
+      // 注册 SW
+      registerServiceWorker();
+
+      // 连接 SSE
+      connectSSE();
+
+      // 恢复设置
+      const savedSettings = localStorage.getItem('gold-settings');
+      if (savedSettings) {
+        state.settings = JSON.parse(savedSettings);
+        $('#toggleAlways').classList.toggle('on', state.settings.alwaysNotify);
+        if (state.settings.upperLimit) $('#inputUpperLimit').value = state.settings.upperLimit;
+        if (state.settings.lowerLimit) $('#inputLowerLimit').value = state.settings.lowerLimit;
+        if (state.settings.changeThreshold) $('#inputChangeThreshold').value = state.settings.changeThreshold;
+      }
+
+      // 恢复订阅状态
+      const savedSubId = localStorage.getItem('gold-sub-id');
+      if (savedSubId) {
+        state.subscriptionId = savedSubId;
+        state.isSubscribed = true;
+        showNotifyStatus(true);
+      }
+
+      // 开启通知按钮
+      $('#btnEnableNotify').addEventListener('click', enableNotifications);
+
+      // 测试通知
+      $('#btnTestNotify').addEventListener('click', async () => {
+        if (state.subscriptionId) {
+          await fetch('/api/test-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscriptionId: state.subscriptionId })
+          });
+          showToast('🧪 测试通知已发送');
+        }
+      });
+
+      // 关闭通知
+      $('#btnDisableNotify').addEventListener('click', () => {
+        state.isSubscribed = false;
+        state.subscriptionId = null;
+        localStorage.removeItem('gold-sub-id');
+        localStorage.removeItem('gold-subscription');
+        showNotifyStatus(false);
+        showToast('🔕 通知已关闭');
+      });
+
+      // 设置面板切换
+      $('#btnSettings').addEventListener('click', () => {
+        const panel = $('#settingsPanel');
+        const isVisible = panel.style.display !== 'none';
+        panel.style.display = isVisible ? 'none' : 'block';
+        $('#btnSettings').classList.toggle('active', !isVisible);
+      });
+
+      // 保存设置
+      $('#btnSaveSettings').addEventListener('click', saveSettings);
+
+      // 刷新
+      $('#btnRefresh').addEventListener('click', async () => {
+        try {
+          const res = await fetch('/api/price');
+          const data = await res.json();
+          updateUI(data);
+          showToast('🔄 已刷新');
+        } catch (e) {
+          showToast('❌ 刷新失败');
+        }
+      });
+
+      // 图表范围切换
+      document.querySelectorAll('.chart-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          state.chartRange = parseInt(tab.dataset.range);
+          const chartData = state.history.slice(-state.chartRange);
+          chart.draw(chartData);
+        });
+      });
+
+      // PWA 安装
+      $('#btnInstall').addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const result = await deferredPrompt.userChoice;
+          if (result.outcome === 'accepted') {
+            showToast('🎉 安装成功！');
+          }
+          deferredPrompt = null;
+          $('#installBar').classList.remove('show');
+        }
+      });
+
+      $('#btnCloseInstall').addEventListener('click', () => {
+        $('#installBar').classList.remove('show');
+      });
+    });
+
+    // 页面可见性变化时重连
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && (!state.eventSource || state.eventSource.readyState === 2)) {
+        connectSSE();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24"/>
+      <stop offset="50%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:rgba(255,255,255,0.3)"/>
+      <stop offset="100%" style="stop-color:rgba(255,255,255,0)"/>
+    </linearGradient>
+  </defs>
+  <rect width="72" height="72" rx="14.4" fill="url(#bg)"/>
+  <circle cx="36" cy="36" r="27.36" fill="url(#gold)" opacity="0.9"/>
+  <circle cx="36" cy="36" r="23.256" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.44"/>
+  <ellipse cx="31.896" cy="31.896" rx="16.416" ry="13.68" fill="url(#shine)" transform="rotate(-30 36 36)"/>
+  <text x="36" y="44.82" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="25.2" fill="#1a1a1a">Au</text>
+</svg>
