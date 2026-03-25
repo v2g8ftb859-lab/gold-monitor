@@ -340,6 +340,19 @@ app.post('/api/subscribe', (req, res) => {
   res.json({ success: true, id });
 });
 
+// 取消订阅（关闭通知时调用）
+app.post('/api/unsubscribe', (req, res) => {
+  const { subscriptionId } = req.body;
+  if (subscriptionId) {
+    subscriptions.delete(subscriptionId);
+    alertSettings.delete(subscriptionId);
+    console.log(`🔕 已删除订阅: ${subscriptionId}`);
+    res.json({ success: true });
+  } else {
+    res.status(400).json({ error: '缺少订阅ID' });
+  }
+});
+
 // 更新告警设置
 app.post('/api/settings', (req, res) => {
   const { subscriptionId, settings, subscription } = req.body;
@@ -424,9 +437,12 @@ app.get('/api/stream', (req, res) => {
 
   // 立即发送当前价格
   if (currentGoldPrice) {
+    const lastRecord = priceHistory[priceHistory.length - 1];
     res.write(`data: ${JSON.stringify({
       price: currentGoldPrice,
       previousPrice,
+      change: lastRecord?.change || 0,
+      changePercent: lastRecord?.changePercent || 0,
       timestamp: new Date().toISOString(),
       source: lastDataSource,
       sgeMarket: sgeMarketData,
@@ -434,9 +450,9 @@ app.get('/api/stream', (req, res) => {
     })}\n\n`);
   }
 
-  // 每10秒推送一次
-  const intervalId = setInterval(async () => {
-    await updateGoldPrice();
+  // SSE 只负责推送已有数据，不再重复调 updateGoldPrice
+  // 金价更新统一由 cron 每30秒执行一次
+  const intervalId = setInterval(() => {
     if (currentGoldPrice) {
       const lastRecord = priceHistory[priceHistory.length - 1];
       res.write(`data: ${JSON.stringify({
@@ -450,7 +466,7 @@ app.get('/api/stream', (req, res) => {
         benchmark: shanghaiGoldBenchmark
       })}\n\n`);
     }
-  }, 10000);
+  }, 30000);  // 每30秒推送一次已有数据，与 cron 频率一致
 
   req.on('close', () => {
     clearInterval(intervalId);
