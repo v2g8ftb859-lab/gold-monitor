@@ -1,5 +1,5 @@
 // ==================== Service Worker - 金价监控 ====================
-const CACHE_NAME = 'gold-monitor-v2';
+const CACHE_NAME = 'gold-monitor-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

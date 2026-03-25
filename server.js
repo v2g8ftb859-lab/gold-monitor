@@ -365,9 +365,36 @@ app.post('/api/subscribe', (req, res) => {
 
 // 更新告警设置
 app.post('/api/settings', (req, res) => {
-  const { subscriptionId, settings } = req.body;
+  const { subscriptionId, settings, subscription } = req.body;
   if (subscriptionId) {
     alertSettings.set(subscriptionId, settings);
+
+    // 如果同时传了 subscription 对象，也更新订阅（防止重启丢失）
+    if (subscription) {
+      subscriptions.set(subscriptionId, subscription);
+    }
+
+    // 如果开启了常驻通知，立刻发送一条，让用户马上看到效果
+    if (settings.persistentNotify && currentGoldPrice) {
+      const sub = subscriptions.get(subscriptionId);
+      if (sub) {
+        const lastRecord = priceHistory[priceHistory.length - 1];
+        const au9999 = sgeMarketData['Au99.99'] || {};
+        const change = lastRecord?.change || 0;
+        const changePct = lastRecord?.changePercent || 0;
+        const arrow = change >= 0 ? '▲' : '▼';
+        const sign = change >= 0 ? '+' : '';
+        const high = au9999.high || currentGoldPrice;
+        const low = au9999.low || currentGoldPrice;
+        const now = new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
+
+        const title = `📊 Au99.99: ¥${currentGoldPrice}  ${arrow}${sign}${change.toFixed(2)}`;
+        const body = `涨跌: ${sign}${changePct.toFixed(3)}%\n最高 ¥${high} | 最低 ¥${low}\n⏱ ${now} · ${lastDataSource}`;
+        sendPushNotification(sub, title, body, currentGoldPrice, { persistent: true });
+        console.log(`📌 已发送常驻通知给 ${subscriptionId}`);
+      }
+    }
+
     res.json({ success: true });
   } else {
     res.status(400).json({ error: '缺少订阅ID' });

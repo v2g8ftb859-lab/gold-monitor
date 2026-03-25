@@ -1305,18 +1305,33 @@
       state.settings = settings;
       localStorage.setItem('gold-settings', JSON.stringify(settings));
 
+      // 如果还没订阅推送，先检查是否需要订阅
+      if (!state.subscriptionId && (settings.persistentNotify || settings.alwaysNotify)) {
+        showToast('⚠️ 请先点击「开启通知」按钮');
+        return;
+      }
+
       if (state.subscriptionId) {
+        // 从 localStorage 获取 subscription 对象一起发送
+        const savedSub = localStorage.getItem('gold-subscription');
+        const subscription = savedSub ? JSON.parse(savedSub) : null;
+
         await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             subscriptionId: state.subscriptionId,
-            settings
+            settings,
+            subscription  // 同时发送 subscription 对象，确保服务端有完整数据
           })
         });
       }
 
-      showToast('✅ 设置已保存');
+      if (settings.persistentNotify) {
+        showToast('📌 常驻通知已开启，下拉通知栏查看');
+      } else {
+        showToast('✅ 设置已保存');
+      }
     }
 
     function toggleSetting(key) {
@@ -1381,6 +1396,21 @@
         state.subscriptionId = savedSubId;
         state.isSubscribed = true;
         showNotifyStatus(true);
+
+        // 重新同步订阅信息和设置到服务端（防止 Render 重启后内存丢失）
+        const savedSub = localStorage.getItem('gold-subscription');
+        if (savedSub) {
+          fetch('/api/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subscription: JSON.parse(savedSub),
+              settings: state.settings
+            })
+          }).then(res => res.json()).then(data => {
+            console.log('✅ 订阅信息已重新同步到服务端');
+          }).catch(e => console.warn('同步订阅失败:', e));
+        }
       }
 
       // 开启通知按钮
