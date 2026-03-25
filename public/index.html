@@ -1219,18 +1219,55 @@
 
     async function enableNotifications() {
       try {
-        const permission = await Notification.requestPermission();
-
-        if (permission === 'granted') {
-          await subscribePush();
-          showNotifyStatus(true);
-          showToast('🔔 通知已开启！');
-        } else {
-          showToast('❌ 请在浏览器设置中允许通知权限');
+        // 1. 检查浏览器支持
+        if (!('serviceWorker' in navigator)) {
+          showToast('❌ 你的浏览器不支持 Service Worker，请用 Chrome 打开');
+          return;
         }
+        if (!('PushManager' in window)) {
+          showToast('❌ 你的浏览器不支持推送通知，请用 Chrome 打开');
+          return;
+        }
+        if (!('Notification' in window)) {
+          showToast('❌ 你的浏览器不支持通知功能');
+          return;
+        }
+
+        // 2. 请求通知权限
+        const permission = await Notification.requestPermission();
+        console.log('通知权限:', permission);
+
+        if (permission === 'denied') {
+          showToast('❌ 通知权限被拒绝，请到浏览器设置中手动允许本站通知');
+          return;
+        }
+        if (permission !== 'granted') {
+          showToast('❌ 请允许通知权限后重试');
+          return;
+        }
+
+        // 3. 确保 Service Worker 已注册
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) {
+          console.log('重新注册 Service Worker...');
+          reg = await navigator.serviceWorker.register('/sw.js');
+          // 等待 SW 激活
+          await navigator.serviceWorker.ready;
+        }
+
+        // 4. 订阅推送
+        await subscribePush();
+        showNotifyStatus(true);
+        showToast('🔔 通知已开启！');
       } catch (e) {
         console.error('开启通知失败:', e);
-        showToast('⚠️ 开启通知失败: ' + e.message);
+        let msg = e.message || '未知错误';
+        if (msg.includes('permission')) {
+          msg = '请在浏览器设置中允许通知权限';
+        } else if (msg.includes('abort') || msg.includes('AbortError')) {
+          msg = '操作被取消，请重试';
+        }
+        showToast('⚠️ 开启通知失败: ' + msg);
       }
     }
 
