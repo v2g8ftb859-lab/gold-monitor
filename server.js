@@ -315,32 +315,9 @@ async function sendPushNotification(subscription, title, body, price, options = 
   }
 }
 
-// ==================== 常驻通知定时更新 ====================
-function startPersistentNotifications() {
-  // 每 30 秒更新一次常驻通知
-  setInterval(() => {
-    if (!currentGoldPrice) return;
-
-    const lastRecord = priceHistory[priceHistory.length - 1];
-    const au9999 = sgeMarketData['Au99.99'] || {};
-    const change = lastRecord?.change || 0;
-    const changePct = lastRecord?.changePercent || 0;
-    const arrow = change >= 0 ? '▲' : '▼';
-    const sign = change >= 0 ? '+' : '';
-    const high = au9999.high || currentGoldPrice;
-    const low = au9999.low || currentGoldPrice;
-    const now = new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
-
-    subscriptions.forEach((sub, id) => {
-      const settings = alertSettings.get(id) || {};
-      if (settings.persistentNotify) {
-        const title = `📊 Au99.99: ¥${currentGoldPrice}  ${arrow}${sign}${change.toFixed(2)}`;
-        const body = `涨跌: ${sign}${changePct.toFixed(3)}%\n最高 ¥${high} | 最低 ¥${low}\n⏱ ${now} · ${lastDataSource}`;
-        sendPushNotification(sub, title, body, currentGoldPrice, { persistent: true });
-      }
-    });
-  }, 30 * 1000);
-}
+// ==================== 常驻通知（已移至前端本地处理） ====================
+// 常驻通知现在由前端通过 Service Worker showNotification 直接更新
+// 不再需要服务端推送，因此这里不做任何处理
 
 // ==================== API 路由 ====================
 
@@ -368,33 +345,10 @@ app.post('/api/settings', (req, res) => {
   const { subscriptionId, settings, subscription } = req.body;
   if (subscriptionId) {
     alertSettings.set(subscriptionId, settings);
-
     // 如果同时传了 subscription 对象，也更新订阅（防止重启丢失）
     if (subscription) {
       subscriptions.set(subscriptionId, subscription);
     }
-
-    // 如果开启了常驻通知，立刻发送一条，让用户马上看到效果
-    if (settings.persistentNotify && currentGoldPrice) {
-      const sub = subscriptions.get(subscriptionId);
-      if (sub) {
-        const lastRecord = priceHistory[priceHistory.length - 1];
-        const au9999 = sgeMarketData['Au99.99'] || {};
-        const change = lastRecord?.change || 0;
-        const changePct = lastRecord?.changePercent || 0;
-        const arrow = change >= 0 ? '▲' : '▼';
-        const sign = change >= 0 ? '+' : '';
-        const high = au9999.high || currentGoldPrice;
-        const low = au9999.low || currentGoldPrice;
-        const now = new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
-
-        const title = `📊 Au99.99: ¥${currentGoldPrice}  ${arrow}${sign}${change.toFixed(2)}`;
-        const body = `涨跌: ${sign}${changePct.toFixed(3)}%\n最高 ¥${high} | 最低 ¥${low}\n⏱ ${now} · ${lastDataSource}`;
-        sendPushNotification(sub, title, body, currentGoldPrice, { persistent: true });
-        console.log(`📌 已发送常驻通知给 ${subscriptionId}`);
-      }
-    }
-
     res.json({ success: true });
   } else {
     res.status(400).json({ error: '缺少订阅ID' });
@@ -544,9 +498,6 @@ app.listen(PORT, () => {
   cron.schedule('*/30 * * * * *', () => {
     updateGoldPrice();
   });
-
-  // 启动常驻通知定时更新
-  startPersistentNotifications();
 
   // 生产环境开启防休眠
   if (isProduction) {

@@ -788,9 +788,9 @@
           <div class="toggle" id="togglePersistent" onclick="toggleSetting('persistentNotify')"></div>
         </div>
         <div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,0.08);border-radius:8px;font-size:11px;color:var(--text-muted);line-height:1.6;">
-          ✅ 开启后通知栏将常驻一条金价信息，每30秒自动更新<br>
-          ✅ 静默更新，不会响铃/震动打扰你<br>
-          ⚠️ iPhone 需先「添加到主屏幕」才能收到通知
+          ✅ 通知栏固定一条金价，随页面数据实时刷新<br>
+          ✅ 静默更新，不会响铃/震动/重复弹出<br>
+          ⚠️ 需保持此页面在后台运行（不要关闭）
         </div>
       </div>
 
@@ -1171,6 +1171,8 @@
             changePercent: data.changePercent || 0,
             timestamp: data.timestamp
           });
+          // 常驻通知：用本地 showNotification 原地刷新
+          updatePersistentNotification(data);
         } catch (e) {
           console.error('SSE 数据解析失败:', e);
         }
@@ -1292,6 +1294,87 @@
       $('#notifyStatus').style.display = enabled ? 'block' : 'none';
     }
 
+    // ==================== 本地常驻通知（核心） ====================
+    // 不走 Web Push 服务端推送，而是在前端直接用 SW 的 showNotification
+    // 每次 SSE 收到新价格，就用相同 tag 覆盖更新通知内容
+    // 这样通知栏只有一条，且内容实时变化，不会重复弹出
+    let persistentNotifTimer = null;
+
+    async function updatePersistentNotification(data) {
+      if (!state.settings.persistentNotify) return;
+      if (!data || !data.price) return;
+      if (Notification.permission !== 'granted') return;
+
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) return;
+
+        const change = data.change || 0;
+        const changePct = data.changePercent || 0;
+        const arrow = change >= 0 ? '▲' : '▼';
+        const sign = change >= 0 ? '+' : '';
+        const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+        // 行情数据
+        const au9999 = data.sgeMarket?.['Au99.99'] || {};
+        const high = au9999.high || data.price;
+        const low = au9999.low || data.price;
+        const source = data.source || '';
+
+        const title = `📊 Au99.99: ¥${data.price.toFixed(2)}  ${arrow}${sign}${change.toFixed(2)}`;
+        const body = `涨跌: ${sign}${changePct.toFixed(3)}%  |  最高 ¥${high}  最低 ¥${low}\n⏱ ${now} · ${source}`;
+
+        // 用 Service Worker 的 showNotification，相同 tag 会替换旧通知
+        await reg.showNotification(title, {
+          body: body,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/badge-72.png',
+          tag: 'gold-persistent-local',   // 固定 tag，始终替换
+          renotify: false,                // 不重新提醒（不震动不响铃）
+          requireInteraction: true,       // 不自动消失
+          silent: true,                   // 完全静默
+          vibrate: [],
+          actions: [{ action: 'view', title: '📊 查看详情' }],
+          data: { url: '/', price: data.price }
+        });
+      } catch (e) {
+        console.warn('常驻通知更新失败:', e);
+      }
+    }
+
+    // 开启/关闭常驻通知
+    function startPersistentNotification() {
+      if (Notification.permission !== 'granted') {
+        showToast('⚠️ 请先点击「开启通知」允许通知权限');
+        return false;
+      }
+      // 立刻发一条，让用户马上看到
+      if (state.price) {
+        updatePersistentNotification({
+          price: state.price,
+          change: 0,
+          changePercent: 0,
+          sgeMarket: null,
+          source: '初始化'
+        });
+      }
+      showToast('📌 常驻通知已开启，下拉通知栏查看');
+      return true;
+    }
+
+    async function stopPersistentNotification() {
+      // 关闭时清除通知栏的常驻通知
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          const notifications = await reg.getNotifications({ tag: 'gold-persistent-local' });
+          notifications.forEach(n => n.close());
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     // ==================== 告警设置 ====================
     async function saveSettings() {
       const settings = {
@@ -1305,31 +1388,45 @@
       state.settings = settings;
       localStorage.setItem('gold-settings', JSON.stringify(settings));
 
-      // 如果还没订阅推送，先检查是否需要订阅
-      if (!state.subscriptionId && (settings.persistentNotify || settings.alwaysNotify)) {
-        showToast('⚠️ 请先点击「开启通知」按钮');
-        return;
+      // 常驻通知：纯本地控制，不需要 Web Push
+      if (settings.persistentNotify) {
+        // 需要通知权限
+        if (Notification.permission !== 'granted') {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') {
+            showToast('❌ 需要通知权限才能使用常驻通知');
+            state.settings.persistentNotify = false;
+            $('#togglePersistent').classList.remove('on');
+            return;
+          }
+        }
+        // 需要 Service Worker
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) {
+          reg = await navigator.serviceWorker.register('/sw.js');
+          await navigator.serviceWorker.ready;
+        }
+        startPersistentNotification();
+      } else {
+        stopPersistentNotification();
       }
 
+      // 其他告警设置仍走服务端
       if (state.subscriptionId) {
-        // 从 localStorage 获取 subscription 对象一起发送
         const savedSub = localStorage.getItem('gold-subscription');
         const subscription = savedSub ? JSON.parse(savedSub) : null;
-
         await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             subscriptionId: state.subscriptionId,
-            settings,
-            subscription  // 同时发送 subscription 对象，确保服务端有完整数据
+            settings: { ...settings, persistentNotify: false }, // 服务端不需要管常驻通知了
+            subscription
           })
         });
       }
 
-      if (settings.persistentNotify) {
-        showToast('📌 常驻通知已开启，下拉通知栏查看');
-      } else {
+      if (!settings.persistentNotify) {
         showToast('✅ 设置已保存');
       }
     }
@@ -1388,6 +1485,8 @@
         if (state.settings.upperLimit) $('#inputUpperLimit').value = state.settings.upperLimit;
         if (state.settings.lowerLimit) $('#inputLowerLimit').value = state.settings.lowerLimit;
         if (state.settings.changeThreshold) $('#inputChangeThreshold').value = state.settings.changeThreshold;
+        // 常驻通知：如果之前开着，自动恢复（不需要再次保存）
+        // 会在 SSE 收到第一条数据时自动更新通知
       }
 
       // 恢复订阅状态
