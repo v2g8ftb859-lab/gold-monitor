@@ -1,5 +1,5 @@
 // ==================== Service Worker - 金价监控 ====================
-const CACHE_NAME = 'gold-monitor-v6';
+const CACHE_NAME = 'gold-monitor-v7';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -63,28 +63,29 @@ self.addEventListener('push', (event) => {
     data = {
       title: '💰 金价更新',
       body: event.data ? event.data.text() : '有新的金价信息',
+      tag: 'gold-fallback',
+      renotify: true,
+      silent: false,
+      requireInteraction: false,
+      vibrate: [200, 100, 200],
+      actions: []
     };
   }
 
-  // 常驻通知模式：静默替换，不震动不响铃，钉在通知栏
-  const isPersistent = data.persistent === true;
-
+  // 直接使用服务端传来的参数，不做额外判断
+  // 常驻通知：tag='gold-persistent', silent=true, renotify=false → 原地静默替换
+  // 告警通知：tag='gold-alert-xxx', silent=false, renotify=true → 响铃弹出
   const options = {
-    body: data.body,
+    body: data.body || '',
     icon: data.icon || '/icons/icon-192.png',
     badge: data.badge || '/icons/badge-72.png',
-    tag: data.tag || 'gold-price',          // 相同 tag 会替换旧通知
-    renotify: isPersistent ? false : true,   // 常驻模式不重复提醒
-    data: data.data || {},
-    requireInteraction: isPersistent,        // 常驻模式：用户不手动划掉就不消失
-    silent: isPersistent,                    // 常驻模式：静默更新，不响铃不震动
-    vibrate: isPersistent ? [] : (data.vibrate || [200, 100, 200]),
-    actions: isPersistent
-      ? [{ action: 'view', title: '📊 查看详情' }]
-      : (data.actions || [
-          { action: 'view', title: '查看详情' },
-          { action: 'dismiss', title: '忽略' }
-        ]),
+    tag: data.tag || 'gold-price',
+    renotify: data.renotify ?? true,
+    silent: data.silent ?? false,
+    requireInteraction: data.requireInteraction ?? false,
+    vibrate: data.vibrate || [200, 100, 200],
+    actions: data.actions || [],
+    data: data.data || {}
   };
 
   event.waitUntil(

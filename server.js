@@ -308,66 +308,89 @@ function checkAlerts(price, record) {
   subscriptions.forEach((sub, id) => {
     const settings = alertSettings.get(id) || {};
 
-    let shouldNotify = false;
-    let notifyTitle = '💰 金价监控';
-    let notifyBody = '';
+    // ====== 1. 常驻通知（静默覆盖，固定在通知栏） ======
+    // 用固定 tag + silent + renotify:false 实现"原地更新"不重复弹出
+    if (settings.persistentNotify) {
+      const arrow = record.change >= 0 ? '▲' : '▼';
+      const sign = record.change >= 0 ? '+' : '';
+      const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      sendPushNotification(sub, {
+        title: `📊 ¥${price.toFixed(2)}/克  ${arrow}${sign}${record.change.toFixed(2)}`,
+        body: `涨跌: ${sign}${record.changePercent.toFixed(3)}% | ${lastDataSource}\n⏱ ${now}`,
+        tag: 'gold-persistent',         // 固定tag → 同一条通知原地替换
+        renotify: false,                // 不重新提醒（不震动、不响铃、不弹出）
+        silent: true,                   // 完全静默
+        requireInteraction: true,       // 不自动消失，钉在通知栏
+        vibrate: [],
+        actions: [{ action: 'view', title: '📊 查看详情' }]
+      });
+    }
 
-    // 1. 定时推送（每次更新都推送）
+    // ====== 2. 普通告警推送（响铃弹出，只在触发条件时才推） ======
+    let alertTitle = '';
+    let alertBody = '';
+
+    // 普通定时推送（每次价格变动都弹通知，会响铃）
     if (settings.alwaysNotify) {
-      shouldNotify = true;
       const arrow = record.change >= 0 ? '📈' : '📉';
-      notifyBody = `${arrow} Au99.99: ¥${price}/克\n变动: ${record.change >= 0 ? '+' : ''}¥${record.change} (${record.changePercent}%)`;
+      alertTitle = '💰 金价更新';
+      alertBody = `${arrow} ¥${price}/克 | ${record.change >= 0 ? '+' : ''}¥${record.change} (${record.changePercent}%)`;
     }
 
-    // 2. 价格上限告警
+    // 价格上限告警（优先级更高，覆盖普通推送）
     if (settings.upperLimit && price >= settings.upperLimit) {
-      shouldNotify = true;
-      notifyTitle = '🚨 金价上限告警';
-      notifyBody = `Au99.99 已达 ¥${price}/克，超过设定上限 ¥${settings.upperLimit}！`;
+      alertTitle = '🚨 金价上限告警';
+      alertBody = `Au99.99 已达 ¥${price}/克，超过上限 ¥${settings.upperLimit}！`;
     }
 
-    // 3. 价格下限告警
+    // 价格下限告警
     if (settings.lowerLimit && price <= settings.lowerLimit) {
-      shouldNotify = true;
-      notifyTitle = '🚨 金价下限告警';
-      notifyBody = `Au99.99 已降至 ¥${price}/克，低于设定下限 ¥${settings.lowerLimit}！`;
+      alertTitle = '🚨 金价下限告警';
+      alertBody = `Au99.99 已降至 ¥${price}/克，低于下限 ¥${settings.lowerLimit}！`;
     }
 
-    // 4. 波动幅度告警
+    // 波动幅度告警
     if (settings.changeThreshold && Math.abs(record.changePercent) >= settings.changeThreshold) {
-      shouldNotify = true;
-      notifyTitle = '⚠️ 金价剧烈波动';
-      notifyBody = `Au99.99 波动 ${record.changePercent}%，当前 ¥${price}/克`;
+      alertTitle = '⚠️ 金价剧烈波动';
+      alertBody = `Au99.99 波动 ${record.changePercent}%，当前 ¥${price}/克`;
     }
 
-    if (shouldNotify && notifyBody) {
-      sendPushNotification(sub, notifyTitle, notifyBody, price);
+    if (alertTitle && alertBody) {
+      sendPushNotification(sub, {
+        title: alertTitle,
+        body: alertBody,
+        tag: 'gold-alert-' + Date.now(),  // 每条告警独立（不覆盖），确保用户看到
+        renotify: true,                    // 重新提醒（响铃+震动）
+        silent: false,
+        requireInteraction: false,         // 自动消失
+        vibrate: [200, 100, 200],
+        actions: [
+          { action: 'view', title: '查看详情' },
+          { action: 'dismiss', title: '忽略' }
+        ]
+      });
     }
   });
 }
 
 // ==================== 推送通知 ====================
-async function sendPushNotification(subscription, title, body, price, options = {}) {
+async function sendPushNotification(subscription, options) {
   const payload = JSON.stringify({
-    title,
-    body,
+    title: options.title,
+    body: options.body,
     icon: '/icons/icon-192.png',
     badge: '/icons/badge-72.png',
+    tag: options.tag || 'gold-price',
+    renotify: options.renotify ?? true,
+    silent: options.silent ?? false,
+    requireInteraction: options.requireInteraction ?? false,
+    vibrate: options.vibrate || [200, 100, 200],
+    actions: options.actions || [],
     data: {
-      price,
+      price: currentGoldPrice,
       timestamp: new Date().toISOString(),
       url: '/'
-    },
-    persistent: options.persistent || false,  // 常驻通知标记
-    tag: options.persistent ? 'gold-persistent' : 'gold-price',
-    actions: options.persistent
-      ? [{ action: 'view', title: '📊 查看详情' }]
-      : [
-          { action: 'view', title: '查看详情' },
-          { action: 'dismiss', title: '忽略' }
-        ],
-    vibrate: options.persistent ? [] : [200, 100, 200],
-    renotify: options.persistent ? false : true
+    }
   });
 
   try {
@@ -385,10 +408,6 @@ async function sendPushNotification(subscription, title, body, price, options = 
     console.error('推送失败:', error.message);
   }
 }
-
-// ==================== 常驻通知（已移至前端本地处理） ====================
-// 常驻通知现在由前端通过 Service Worker showNotification 直接更新
-// 不再需要服务端推送，因此这里不做任何处理
 
 // ==================== API 路由 ====================
 
@@ -487,12 +506,16 @@ app.post('/api/test-notification', (req, res) => {
   const sub = subscriptions.get(subscriptionId);
 
   if (sub) {
-    sendPushNotification(
-      sub,
-      '🔔 测试通知',
-      `金价监控运行中！Au99.99: ¥${currentGoldPrice || '获取中...'}/克 | 数据源: ${lastDataSource}`,
-      currentGoldPrice
-    );
+    sendPushNotification(sub, {
+      title: '🔔 测试通知',
+      body: `金价监控运行中！当前 ¥${currentGoldPrice || '获取中...'}/克 | ${lastDataSource}`,
+      tag: 'gold-test-' + Date.now(),
+      renotify: true,
+      silent: false,
+      requireInteraction: false,
+      vibrate: [200, 100, 200],
+      actions: [{ action: 'view', title: '查看详情' }]
+    });
     res.json({ success: true });
   } else {
     res.status(404).json({ error: '未找到订阅' });
