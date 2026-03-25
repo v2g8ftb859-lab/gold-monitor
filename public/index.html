@@ -1079,7 +1079,15 @@
 
       // 数据源
       if (source) {
-        document.getElementById('dataSource').textContent = `📡 数据源: ${source} (sge.com.cn)`;
+        let sourceHint = '';
+        if (source.includes('国际金价')) {
+          sourceHint = ' (COMEX金×汇率换算)';
+        } else if (source.includes('ETF')) {
+          sourceHint = ' (黄金ETF×100)';
+        } else if (source.includes('上金所')) {
+          sourceHint = ' (sge.com.cn)';
+        }
+        document.getElementById('dataSource').textContent = `📡 ${source}${sourceHint}`;
       }
 
       // 上金所行情数据

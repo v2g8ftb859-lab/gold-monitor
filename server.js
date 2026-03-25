@@ -36,13 +36,18 @@ let lastDataSource = '初始化中';
 let sgeMarketData = {};  // { Au99.99: {latest, high, low, open}, Au(T+D): {...}, ... }
 let shanghaiGoldBenchmark = { am: null, pm: null }; // 上海金基准价
 
-// ==================== 上金所实时金价获取 ====================
-// 所有数据来源于上海黄金交易所官网 https://www.sge.com.cn/
+// ==================== 多数据源实时金价获取 ====================
+// 数据源优先级：
+// 1. 上金所延时行情（交易时段最权威）
+// 2. 新浪国际金价实时换算（24小时可用）
+// 3. 黄金ETF实时价格换算（A股交易时段）
+// 4. 上金所首页上海金基准价（每天固定值，兜底）
 async function fetchGoldPrice() {
   const sources = [
     { name: '上金所延时行情(Au99.99)', fn: fetchFromSGEDelayed },
+    { name: '新浪国际金价换算', fn: fetchFromSinaInternational },
+    { name: '黄金ETF(518880)换算', fn: fetchFromGoldETF },
     { name: '上金所首页(上海金基准价)', fn: fetchFromSGEHomepage },
-    { name: '东方财富-沪金主力', fn: fetchFromEastMoneyFutures },
   ];
 
   for (const source of sources) {
@@ -61,8 +66,8 @@ async function fetchGoldPrice() {
   return null;
 }
 
-// ===== 数据源1（主力）: 上金所延时行情页面 =====
-// 直接抓取 https://www.sge.com.cn/sjzx/yshqbg 的HTML表格
+// ===== 数据源1: 上金所延时行情页面 =====
+// 交易时段返回实时数据，非交易时段返回 0.0（会被过滤掉）
 async function fetchFromSGEDelayed() {
   const response = await fetch('https://www.sge.com.cn/sjzx/yshqbg', {
     headers: {
@@ -81,11 +86,9 @@ async function fetchFromSGEDelayed() {
   const html = await response.text();
   const $ = cheerio.load(html);
 
-  // 解析表格数据
   let au9999Price = null;
   const allContracts = {};
 
-  // 遍历所有表格行
   $('table tr').each((i, row) => {
     const cells = $(row).find('td');
     if (cells.length >= 4) {
@@ -95,7 +98,8 @@ async function fetchFromSGEDelayed() {
       const lowPrice = parseFloat($(cells[3]).text().trim());
       const openPrice = cells.length >= 5 ? parseFloat($(cells[4]).text().trim()) : null;
 
-      if (contract && latestPrice > 0) {
+      // 关键：必须 > 100 才算有效（非交易时段返回 0.0）
+      if (contract && latestPrice > 100) {
         allContracts[contract] = {
           latest: latestPrice,
           high: highPrice || latestPrice,
@@ -106,34 +110,113 @@ async function fetchFromSGEDelayed() {
     }
   });
 
-  // 保存完整行情数据
   if (Object.keys(allContracts).length > 0) {
     sgeMarketData = allContracts;
     console.log(`  📊 解析到 ${Object.keys(allContracts).length} 个合约行情`);
   }
 
-  // 优先取 Au99.99
-  if (allContracts['Au99.99'] && allContracts['Au99.99'].latest > 0) {
-    au9999Price = allContracts['Au99.99'].latest;
-  }
-  // 其次取 Au(T+D)
-  if (!au9999Price && allContracts['Au(T+D)'] && allContracts['Au(T+D)'].latest > 0) {
-    au9999Price = allContracts['Au(T+D)'].latest;
-  }
-  // 再次取 Au100g
-  if (!au9999Price && allContracts['Au100g'] && allContracts['Au100g'].latest > 0) {
-    au9999Price = allContracts['Au100g'].latest;
-  }
+  if (allContracts['Au99.99']?.latest > 0) au9999Price = allContracts['Au99.99'].latest;
+  if (!au9999Price && allContracts['Au(T+D)']?.latest > 0) au9999Price = allContracts['Au(T+D)'].latest;
+  if (!au9999Price && allContracts['Au100g']?.latest > 0) au9999Price = allContracts['Au100g'].latest;
 
   if (au9999Price && au9999Price > 100 && au9999Price < 5000) {
     return parseFloat(au9999Price.toFixed(2));
   }
 
-  throw new Error('上金所延时行情页面未解析到有效金价');
+  throw new Error('上金所延时行情无有效数据（可能非交易时段）');
 }
 
-// ===== 数据源2: 上金所首页 上海金基准价 =====
-// 抓取首页的上海金早盘价/午盘价
+// ===== 数据源2（24小时可用）: 新浪国际金价实时换算 =====
+// 通过纽约金（COMEX黄金，美元/盎司）+ 美元兑人民币汇率 换算成 人民币/克
+async function fetchFromSinaInternational() {
+  const response = await fetch('https://hq.sinajs.cn/list=hf_GC,fx_susdcny', {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://finance.sina.com.cn/'
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+
+  const text = await response.text();
+
+  // 解析纽约金价（美元/盎司）
+  const gcMatch = text.match(/hf_GC="([^"]+)"/);
+  if (!gcMatch) throw new Error('无法解析纽约金价');
+
+  const gcFields = gcMatch[1].split(',');
+  const goldUSD = parseFloat(gcFields[0]); // 最新价
+  if (!goldUSD || goldUSD <= 0) throw new Error('纽约金价为空');
+
+  // 解析美元兑人民币汇率
+  const cnyMatch = text.match(/fx_susdcny="([^"]+)"/);
+  if (!cnyMatch) throw new Error('无法解析汇率');
+
+  const cnyFields = cnyMatch[1].split(',');
+  const usdcny = parseFloat(cnyFields[1]); // 买入价
+  if (!usdcny || usdcny <= 0) throw new Error('汇率为空');
+
+  // 换算：美元/盎司 → 人民币/克（1盎司 = 31.1035克）
+  const goldCNYPerGram = (goldUSD * usdcny) / 31.1035;
+
+  console.log(`  📊 纽约金: $${goldUSD}/oz × ${usdcny} = ¥${goldCNYPerGram.toFixed(2)}/克`);
+
+  if (goldCNYPerGram > 100 && goldCNYPerGram < 5000) {
+    // 保存国际金价信息到 sgeMarketData（补充展示）
+    sgeMarketData['国际金(换算)'] = {
+      latest: parseFloat(goldCNYPerGram.toFixed(2)),
+      high: parseFloat(((parseFloat(gcFields[4]) || goldUSD) * usdcny / 31.1035).toFixed(2)),
+      low: parseFloat(((parseFloat(gcFields[5]) || goldUSD) * usdcny / 31.1035).toFixed(2)),
+      open: parseFloat(((parseFloat(gcFields[2]) || goldUSD) * usdcny / 31.1035).toFixed(2)),
+      goldUSD,
+      usdcny
+    };
+    return parseFloat(goldCNYPerGram.toFixed(2));
+  }
+
+  throw new Error(`换算金价异常: ¥${goldCNYPerGram.toFixed(2)}`);
+}
+
+// ===== 数据源3: 黄金ETF(518880)实时价格换算 =====
+// 华安黄金ETF 每份约对应0.01克黄金，A股交易时段实时更新
+async function fetchFromGoldETF() {
+  const response = await fetch('https://push2.eastmoney.com/api/qt/stock/get?secid=1.518880&fields=f43,f44,f45,f46,f170,f14&ut=fa5fd1943c7b386f172d6893dbbd1', {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://quote.eastmoney.com/'
+    },
+    signal: AbortSignal.timeout(5000)
+  });
+
+  const data = await response.json();
+  if (!data.data || !data.data.f43) throw new Error('ETF数据为空');
+
+  // 东方财富返回的价格单位是 厘（1元=1000厘）
+  const etfPrice = data.data.f43 / 1000; // 元/份
+  const etfHigh = data.data.f44 / 1000;
+  const etfLow = data.data.f45 / 1000;
+
+  // 1份ETF ≈ 0.01克黄金 → 金价 = ETF价格 × 100
+  const goldPrice = etfPrice * 100;
+  const goldHigh = etfHigh * 100;
+  const goldLow = etfLow * 100;
+
+  console.log(`  📊 黄金ETF: ¥${etfPrice}/份 → 金价 ≈ ¥${goldPrice.toFixed(2)}/克`);
+
+  if (goldPrice > 100 && goldPrice < 5000) {
+    sgeMarketData['黄金ETF(换算)'] = {
+      latest: parseFloat(goldPrice.toFixed(2)),
+      high: parseFloat(goldHigh.toFixed(2)),
+      low: parseFloat(goldLow.toFixed(2)),
+      open: parseFloat((data.data.f46 / 1000 * 100).toFixed(2))
+    };
+    return parseFloat(goldPrice.toFixed(2));
+  }
+
+  throw new Error(`ETF换算金价异常: ¥${goldPrice.toFixed(2)}`);
+}
+
+// ===== 数据源4（兜底）: 上金所首页上海金基准价 =====
+// 每天固定值（早盘/午盘各一个），不会实时变化
 async function fetchFromSGEHomepage() {
   const response = await fetch('https://www.sge.com.cn/', {
     headers: {
@@ -150,15 +233,12 @@ async function fetchFromSGEHomepage() {
 
   const html = await response.text();
 
-  // 从首页提取上海金基准价
-  // 首页展示了: 上海金 早盘价 xxx.xx 午盘价 xxx.xx
   const amMatch = html.match(/早盘价[^]*?(\d{3,4}\.\d{1,2})/);
   const pmMatch = html.match(/午盘价[^]*?(\d{3,4}\.\d{1,2})/);
 
   if (amMatch) shanghaiGoldBenchmark.am = parseFloat(amMatch[1]);
   if (pmMatch) shanghaiGoldBenchmark.pm = parseFloat(pmMatch[1]);
 
-  // 优先用午盘价（更新），其次早盘价
   const benchmarkPrice = shanghaiGoldBenchmark.pm || shanghaiGoldBenchmark.am;
 
   if (benchmarkPrice && benchmarkPrice > 100 && benchmarkPrice < 5000) {
@@ -169,63 +249,54 @@ async function fetchFromSGEHomepage() {
   throw new Error('上金所首页未找到上海金基准价');
 }
 
-// ===== 数据源3: 东方财富 - 沪金主力期货 =====
-async function fetchFromEastMoneyFutures() {
-  const contracts = ['au2506', 'au2508', 'au2512'];
-  for (const contract of contracts) {
-    try {
-      const secid = `113.${contract}`;
-      const response = await fetch(`https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f170&ut=fa5fd1943c7b386f172d6893dbbd1`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://quote.eastmoney.com/'
-        },
-        signal: AbortSignal.timeout(5000)
-      });
-      const data = await response.json();
-      if (data.data && data.data.f43) {
-        const price = data.data.f43 / 100;
-        if (price > 100 && price < 5000) {
-          return parseFloat(price.toFixed(2));
-        }
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  throw new Error('东方财富期货 API 失败');
-}
-
 // ==================== 价格更新逻辑 ====================
+let lastFetchTime = null; // 上次成功获取时间
+
 async function updateGoldPrice() {
   try {
-    previousPrice = currentGoldPrice;
     const newPrice = await fetchGoldPrice();
 
     if (newPrice) {
-      currentGoldPrice = newPrice;
-
       const now = new Date();
+      lastFetchTime = now;
+
+      // 计算与上一个不同价格之间的变动
+      const change = previousPrice ? parseFloat((newPrice - previousPrice).toFixed(2)) : 0;
+      const changePercent = previousPrice
+        ? parseFloat(((newPrice - previousPrice) / previousPrice * 100).toFixed(4))
+        : 0;
+
       const record = {
         price: newPrice,
         timestamp: now.toISOString(),
         time: now.toLocaleTimeString('zh-CN', { hour12: false }),
-        change: previousPrice ? parseFloat((newPrice - previousPrice).toFixed(2)) : 0,
-        changePercent: previousPrice
-          ? parseFloat(((newPrice - previousPrice) / previousPrice * 100).toFixed(4))
-          : 0
+        change,
+        changePercent,
+        source: lastDataSource
       };
 
-      priceHistory.push(record);
-      // 只保留最近 500 条记录
-      if (priceHistory.length > 500) {
-        priceHistory = priceHistory.slice(-500);
+      // 只在价格真正变化时才写入新历史记录，避免重复
+      if (newPrice !== currentGoldPrice) {
+        // 价格变化了，更新 previousPrice
+        previousPrice = currentGoldPrice;
+        currentGoldPrice = newPrice;
+
+        priceHistory.push(record);
+        if (priceHistory.length > 500) {
+          priceHistory = priceHistory.slice(-500);
+        }
+
+        console.log(`💰 金价更新: ¥${newPrice}/克 | 变动: ${change >= 0 ? '+' : ''}${change} (${changePercent}%) | 数据源: ${lastDataSource}`);
+
+        // 价格变化时才检查告警
+        checkAlerts(newPrice, record);
+      } else {
+        // 价格没变，只更新时间戳（静默，不打日志刷屏）
+        if (priceHistory.length > 0) {
+          priceHistory[priceHistory.length - 1].timestamp = now.toISOString();
+          priceHistory[priceHistory.length - 1].time = now.toLocaleTimeString('zh-CN', { hour12: false });
+        }
       }
-
-      console.log(`💰 上金所金价: ¥${newPrice}/克 | 变动: ${record.change >= 0 ? '+' : ''}${record.change} (${record.changePercent}%) | 数据源: ${lastDataSource}`);
-
-      // 检查是否触发告警
-      checkAlerts(newPrice, record);
     }
   } catch (error) {
     console.error('❌ 金价更新失败:', error.message);
