@@ -782,8 +782,23 @@
       <div class="setting-card">
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">实时推送</div>
-            <div class="setting-desc">每次价格更新都推送通知</div>
+            <div class="setting-label">📌 常驻通知栏</div>
+            <div class="setting-desc">像网易云音乐一样固定在通知栏，实时显示金价</div>
+          </div>
+          <div class="toggle" id="togglePersistent" onclick="toggleSetting('persistentNotify')"></div>
+        </div>
+        <div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,0.08);border-radius:8px;font-size:11px;color:var(--text-muted);line-height:1.6;">
+          ✅ 开启后通知栏将常驻一条金价信息，每30秒自动更新<br>
+          ✅ 静默更新，不会响铃/震动打扰你<br>
+          ⚠️ iPhone 需先「添加到主屏幕」才能收到通知
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">🔔 普通推送</div>
+            <div class="setting-desc">每次价格更新都弹出通知（会响铃）</div>
           </div>
           <div class="toggle" id="toggleAlways" onclick="toggleSetting('alwaysNotify')"></div>
         </div>
@@ -880,6 +895,7 @@
       eventSource: null,
       chartRange: 30,
       settings: {
+        persistentNotify: false,
         alwaysNotify: false,
         upperLimit: null,
         lowerLimit: null,
@@ -1279,6 +1295,7 @@
     // ==================== 告警设置 ====================
     async function saveSettings() {
       const settings = {
+        persistentNotify: state.settings.persistentNotify,
         alwaysNotify: state.settings.alwaysNotify,
         upperLimit: parseFloat($('#inputUpperLimit').value) || null,
         lowerLimit: parseFloat($('#inputLowerLimit').value) || null,
@@ -1304,8 +1321,11 @@
 
     function toggleSetting(key) {
       state.settings[key] = !state.settings[key];
-      const el = document.getElementById('toggleAlways');
-      el.classList.toggle('on', state.settings[key]);
+      if (key === 'persistentNotify') {
+        document.getElementById('togglePersistent').classList.toggle('on', state.settings[key]);
+      } else if (key === 'alwaysNotify') {
+        document.getElementById('toggleAlways').classList.toggle('on', state.settings[key]);
+      }
     }
 
     // ==================== 工具函数 ====================
@@ -1348,6 +1368,7 @@
       const savedSettings = localStorage.getItem('gold-settings');
       if (savedSettings) {
         state.settings = JSON.parse(savedSettings);
+        $('#togglePersistent').classList.toggle('on', state.settings.persistentNotify);
         $('#toggleAlways').classList.toggle('on', state.settings.alwaysNotify);
         if (state.settings.upperLimit) $('#inputUpperLimit').value = state.settings.upperLimit;
         if (state.settings.lowerLimit) $('#inputLowerLimit').value = state.settings.lowerLimit;

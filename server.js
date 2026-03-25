@@ -276,7 +276,7 @@ function checkAlerts(price, record) {
 }
 
 // ==================== 推送通知 ====================
-async function sendPushNotification(subscription, title, body, price) {
+async function sendPushNotification(subscription, title, body, price, options = {}) {
   const payload = JSON.stringify({
     title,
     body,
@@ -287,13 +287,16 @@ async function sendPushNotification(subscription, title, body, price) {
       timestamp: new Date().toISOString(),
       url: '/'
     },
-    actions: [
-      { action: 'view', title: '查看详情' },
-      { action: 'dismiss', title: '忽略' }
-    ],
-    vibrate: [200, 100, 200],
-    tag: 'gold-price',
-    renotify: true
+    persistent: options.persistent || false,  // 常驻通知标记
+    tag: options.persistent ? 'gold-persistent' : 'gold-price',
+    actions: options.persistent
+      ? [{ action: 'view', title: '📊 查看详情' }]
+      : [
+          { action: 'view', title: '查看详情' },
+          { action: 'dismiss', title: '忽略' }
+        ],
+    vibrate: options.persistent ? [] : [200, 100, 200],
+    renotify: options.persistent ? false : true
   });
 
   try {
@@ -310,6 +313,33 @@ async function sendPushNotification(subscription, title, body, price) {
     }
     console.error('推送失败:', error.message);
   }
+}
+
+// ==================== 常驻通知定时更新 ====================
+function startPersistentNotifications() {
+  // 每 30 秒更新一次常驻通知
+  setInterval(() => {
+    if (!currentGoldPrice) return;
+
+    const lastRecord = priceHistory[priceHistory.length - 1];
+    const au9999 = sgeMarketData['Au99.99'] || {};
+    const change = lastRecord?.change || 0;
+    const changePct = lastRecord?.changePercent || 0;
+    const arrow = change >= 0 ? '▲' : '▼';
+    const sign = change >= 0 ? '+' : '';
+    const high = au9999.high || currentGoldPrice;
+    const low = au9999.low || currentGoldPrice;
+    const now = new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
+
+    subscriptions.forEach((sub, id) => {
+      const settings = alertSettings.get(id) || {};
+      if (settings.persistentNotify) {
+        const title = `📊 Au99.99: ¥${currentGoldPrice}  ${arrow}${sign}${change.toFixed(2)}`;
+        const body = `涨跌: ${sign}${changePct.toFixed(3)}%\n最高 ¥${high} | 最低 ¥${low}\n⏱ ${now} · ${lastDataSource}`;
+        sendPushNotification(sub, title, body, currentGoldPrice, { persistent: true });
+      }
+    });
+  }, 30 * 1000);
 }
 
 // ==================== API 路由 ====================
@@ -487,6 +517,9 @@ app.listen(PORT, () => {
   cron.schedule('*/30 * * * * *', () => {
     updateGoldPrice();
   });
+
+  // 启动常驻通知定时更新
+  startPersistentNotifications();
 
   // 生产环境开启防休眠
   if (isProduction) {

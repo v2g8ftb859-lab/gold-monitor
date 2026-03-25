@@ -1,5 +1,5 @@
 // ==================== Service Worker - 金价监控 ====================
-const CACHE_NAME = 'gold-monitor-v1';
+const CACHE_NAME = 'gold-monitor-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -66,20 +66,25 @@ self.addEventListener('push', (event) => {
     };
   }
 
+  // 常驻通知模式：静默替换，不震动不响铃，钉在通知栏
+  const isPersistent = data.persistent === true;
+
   const options = {
     body: data.body,
     icon: data.icon || '/icons/icon-192.png',
     badge: data.badge || '/icons/badge-72.png',
-    vibrate: data.vibrate || [200, 100, 200],
-    tag: data.tag || 'gold-price',
-    renotify: data.renotify !== false,
+    tag: data.tag || 'gold-price',          // 相同 tag 会替换旧通知
+    renotify: isPersistent ? false : true,   // 常驻模式不重复提醒
     data: data.data || {},
-    actions: data.actions || [
-      { action: 'view', title: '查看详情' },
-      { action: 'dismiss', title: '忽略' }
-    ],
-    requireInteraction: false,
-    silent: false
+    requireInteraction: isPersistent,        // 常驻模式：用户不手动划掉就不消失
+    silent: isPersistent,                    // 常驻模式：静默更新，不响铃不震动
+    vibrate: isPersistent ? [] : (data.vibrate || [200, 100, 200]),
+    actions: isPersistent
+      ? [{ action: 'view', title: '📊 查看详情' }]
+      : (data.actions || [
+          { action: 'view', title: '查看详情' },
+          { action: 'dismiss', title: '忽略' }
+        ]),
   };
 
   event.waitUntil(
