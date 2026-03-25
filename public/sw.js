@@ -1,5 +1,5 @@
 // ==================== Service Worker - 金价监控 ====================
-const CACHE_NAME = 'gold-monitor-v8';
+const CACHE_NAME = 'gold-monitor-v9';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -68,37 +68,44 @@ self.addEventListener('push', (event) => {
       silent: false,
       requireInteraction: false,
       vibrate: [200, 100, 200],
-      actions: []
+      actions: [],
+      persistent: false
     };
   }
+
+  const isPersistent = data.persistent === true || data.tag === 'gold-persistent';
 
   const options = {
     body: data.body || '',
     icon: data.icon || '/icons/icon-192.png',
     badge: data.badge || '/icons/badge-72.png',
     tag: data.tag || 'gold-price',
-    renotify: data.renotify ?? true,
-    silent: data.silent ?? false,
+    // 常驻通知：renotify必须false，这样同tag替换时不会重新弹出/响铃
+    // 普通告警：renotify=true，每条都弹出响铃
+    renotify: isPersistent ? false : (data.renotify ?? true),
+    silent: isPersistent ? true : (data.silent ?? false),
     requireInteraction: data.requireInteraction ?? false,
-    vibrate: data.vibrate || [200, 100, 200],
+    vibrate: isPersistent ? [] : (data.vibrate || [200, 100, 200]),
     actions: data.actions || [],
     data: data.data || {}
   };
 
-  // 对常驻通知做特殊处理：先关闭旧的，再创建新的
-  // 这样确保内容100%更新，不会被浏览器"优化"掉
-  if (data.persistent || data.tag === 'gold-persistent') {
+  if (isPersistent) {
+    // 常驻通知：先关闭所有旧的同tag通知，再创建新的
+    // 这样确保通知内容100%被更新
     event.waitUntil(
       self.registration.getNotifications({ tag: 'gold-persistent' })
         .then(existingNotifications => {
           // 关闭所有旧的常驻通知
-          existingNotifications.forEach(n => n.close());
-          // 创建新的常驻通知
+          for (const n of existingNotifications) {
+            n.close();
+          }
+          // 显示新的常驻通知（tag相同，内容更新）
           return self.registration.showNotification(data.title, options);
         })
     );
   } else {
-    // 普通告警通知，直接显示
+    // 普通告警/测试通知：直接显示
     event.waitUntil(
       self.registration.showNotification(data.title, options)
     );
