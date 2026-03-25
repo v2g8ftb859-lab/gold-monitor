@@ -303,30 +303,14 @@ async function updateGoldPrice() {
   }
 }
 
-// ==================== 告警检查 ====================
+// ==================== 告警检查（价格变动时调用） ====================
 function checkAlerts(price, record) {
   subscriptions.forEach((sub, id) => {
     const settings = alertSettings.get(id) || {};
 
-    // ====== 1. 常驻通知（静默覆盖，固定在通知栏） ======
-    // 用固定 tag + silent + renotify:false 实现"原地更新"不重复弹出
-    if (settings.persistentNotify) {
-      const arrow = record.change >= 0 ? '▲' : '▼';
-      const sign = record.change >= 0 ? '+' : '';
-      const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-      sendPushNotification(sub, {
-        title: `📊 ¥${price.toFixed(2)}/克  ${arrow}${sign}${record.change.toFixed(2)}`,
-        body: `涨跌: ${sign}${record.changePercent.toFixed(3)}% | ${lastDataSource}\n⏱ ${now}`,
-        tag: 'gold-persistent',         // 固定tag → 同一条通知原地替换
-        renotify: false,                // 不重新提醒（不震动、不响铃、不弹出）
-        silent: true,                   // 完全静默
-        requireInteraction: true,       // 不自动消失，钉在通知栏
-        vibrate: [],
-        actions: [{ action: 'view', title: '📊 查看详情' }]
-      });
-    }
+    // 常驻通知在 pushPersistentNotifications() 中独立处理，这里只处理告警
 
-    // ====== 2. 普通告警推送（响铃弹出，只在触发条件时才推） ======
+    // ====== 普通告警推送（响铃弹出，只在触发条件时才推） ======
     let alertTitle = '';
     let alertBody = '';
 
@@ -370,6 +354,38 @@ function checkAlerts(price, record) {
         ]
       });
     }
+  });
+}
+
+// ==================== 常驻通知（独立于价格变动，每次cron都推） ====================
+// 关键改动：renotify:true 确保浏览器真正更新通知内容（renotify:false会被大多数浏览器忽略）
+// silent:true 确保不响铃不震动
+// 每30秒推送一次最新金价到通知栏，无论价格是否变化
+function pushPersistentNotifications() {
+  if (!currentGoldPrice) return;
+
+  const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const lastRecord = priceHistory.length > 0 ? priceHistory[priceHistory.length - 1] : null;
+  const change = lastRecord ? lastRecord.change : 0;
+  const changePercent = lastRecord ? lastRecord.changePercent : 0;
+  const arrow = change >= 0 ? '▲' : '▼';
+  const sign = change >= 0 ? '+' : '';
+
+  subscriptions.forEach((sub, id) => {
+    const settings = alertSettings.get(id) || {};
+    if (!settings.persistentNotify) return;
+
+    sendPushNotification(sub, {
+      title: `📊 ¥${currentGoldPrice.toFixed(2)}/克  ${arrow}${sign}${change.toFixed(2)}`,
+      body: `${sign}${changePercent.toFixed(3)}% | ${lastDataSource} | ${now}`,
+      tag: 'gold-persistent',         // 固定tag → 替换同一条通知
+      renotify: true,                 // ← 关键！必须true，否则浏览器不更新内容
+      silent: true,                   // 不响铃、不震动（静默替换）
+      requireInteraction: true,       // 不自动消失，钉在通知栏
+      vibrate: [],                    // 空数组，不震动
+      actions: [{ action: 'view', title: '📊 查看详情' }],
+      persistent: true                // 标记给SW，方便SW做特殊处理
+    });
   });
 }
 
@@ -607,6 +623,8 @@ app.listen(PORT, () => {
   // 每30秒更新一次金价（cron定时任务）
   cron.schedule('*/30 * * * * *', () => {
     updateGoldPrice();
+    // 常驻通知：每次cron都推送最新金价到通知栏（独立于价格变动）
+    pushPersistentNotifications();
   });
 
   // 生产环境开启防休眠
